@@ -31,7 +31,7 @@
       width: 300px;
       height: 420px;
       transform-style: preserve-3d;
-      transition: transform 0.08s ease-out;
+      transition: transform 0.08s ease-out, width 0.3s ease, height 0.3s ease;
       border-radius: 16px;
       cursor: grab;
     }
@@ -364,12 +364,39 @@
       if (m === 'mouse') resetCard();
     }
 
+    const MAX_W = Math.min(window.innerWidth - 48, 360);
+    const MAX_H = window.innerHeight * 0.6;
+
+    function fitCard(naturalW, naturalH) {
+      const ratio = naturalW / naturalH;
+      let w = MAX_W;
+      let h = w / ratio;
+      if (h > MAX_H) { h = MAX_H; w = h * ratio; }
+      w = Math.round(w);
+      h = Math.round(h);
+      card.style.width  = w + 'px';
+      card.style.height = h + 'px';
+      shadow.style.width  = w + 'px';
+      shadow.style.height = h + 'px';
+    }
+
+    const initImg = document.getElementById('card-img');
+    if (initImg.complete && initImg.naturalWidth) {
+      fitCard(initImg.naturalWidth, initImg.naturalHeight);
+    } else {
+      initImg.addEventListener('load', () => {
+        fitCard(initImg.naturalWidth, initImg.naturalHeight);
+      });
+    }
+
     function loadImage(input) {
       const file = input.files[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (e) => {
-        document.getElementById('card-img').src = e.target.result;
+        const img = document.getElementById('card-img');
+        img.onload = () => fitCard(img.naturalWidth, img.naturalHeight);
+        img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     }
