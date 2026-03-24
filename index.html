@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Holographic Card Viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0e0e12;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #e0e0e8;
+    }
+
+    .card-scene {
+      perspective: 900px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 0 20px;
+    }
+
+    .card-wrap {
+      position: relative;
+      width: 300px;
+      height: 420px;
+      transform-style: preserve-3d;
+      transition: transform 0.08s ease-out;
+      border-radius: 16px;
+      cursor: grab;
+    }
+
+    .card-wrap:active { cursor: grabbing; }
+
+    .card-img {
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      display: block;
+      object-fit: cover;
+      position: relative;
+      z-index: 1;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .holo-layer {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      z-index: 2;
+      mix-blend-mode: color-dodge;
+      opacity: 0;
+      transition: opacity 0.15s;
+      pointer-events: none;
+    }
+
+    .foil-layer {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      z-index: 3;
+      opacity: 0;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      background-size: 200% 200%;
+      transition: opacity 0.15s;
+    }
+
+    .glare-layer {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      z-index: 4;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .shadow-base {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      padding: 16px 0 8px;
+    }
+
+    .ctrl-btn {
+      font-size: 12px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.06);
+      color: #c0c0cc;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .ctrl-btn.active {
+      background: #7F77DD;
+      color: #fff;
+      border-color: #7F77DD;
+    }
+
+    .ctrl-btn:hover:not(.active) {
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+    }
+
+    .rarity-row {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      padding: 6px 0;
+    }
+
+    .r-btn {
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: transparent;
+      color: rgba(255,255,255,0.45);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .r-btn.sel { color: #fff; border-color: transparent; }
+    .r-btn.r-common.sel  { background: #888780; }
+    .r-btn.r-rare.sel    { background: #185FA5; }
+    .r-btn.r-holo.sel    { background: #534AB7; }
+    .r-btn.r-ex.sel      { background: #BA7517; }
+
+    .upload-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 0 4px;
+    }
+
+    .upload-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.45);
+      cursor: pointer;
+      padding: 6px 18px;
+      border: 1px dashed rgba(255,255,255,0.2);
+      border-radius: 8px;
+      transition: all 0.15s;
+    }
+
+    .upload-label:hover {
+      border-color: #7F77DD;
+      color: #a09ae0;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: rgba(255,255,255,0.25);
+      text-align: center;
+      padding: 8px 20px 0;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card-scene">
+    <div class="shadow-base" id="shadow"></div>
+    <div class="card-wrap" id="card">
+      <img class="card-img" id="card-img" src="hy_rr.jpg" alt="Card" draggable="false"/>
+      <div class="holo-layer" id="holo"></div>
+      <div class="foil-layer" id="foil"></div>
+      <div class="glare-layer" id="glare"></div>
+    </div>
+  </div>
+
+  <div class="rarity-row">
+    <button class="r-btn r-common" onclick="setRarity('common')">Common</button>
+    <button class="r-btn r-rare"   onclick="setRarity('rare')">Rare</button>
+    <button class="r-btn r-holo sel" onclick="setRarity('holo')">Holo</button>
+    <button class="r-btn r-ex"    onclick="setRarity('ex')">EX/SAR</button>
+  </div>
+
+  <div class="controls">
+    <button class="ctrl-btn active" id="btn-mouse" onclick="setMode('mouse')">마우스 추적</button>
+    <button class="ctrl-btn"        id="btn-gyro"  onclick="setMode('gyro')">자이로스코프</button>
+    <button class="ctrl-btn"        id="btn-spin"  onclick="setMode('spin')">자동 회전</button>
+    <button class="ctrl-btn"        id="btn-reset" onclick="resetCard()">초기화</button>
+  </div>
+
+  <div class="upload-area">
+    <label class="upload-label">
+      내 카드 이미지 교체
+      <input type="file" accept="image/*" style="display:none" id="file-input" onchange="loadImage(this)">
+    </label>
+  </div>
+
+  <p class="hint">마우스를 카드 위에서 움직이거나,<br>자이로스코프 모드에서 기기를 기울여보세요.</p>
+
+  <script>
+    const card   = document.getElementById('card');
+    const holo   = document.getElementById('holo');
+    const foil   = document.getElementById('foil');
+    const glare  = document.getElementById('glare');
+    const shadow = document.getElementById('shadow');
+
+    let mode     = 'mouse';
+    let rarity   = 'holo';
+    let spinAnim = null;
+    let spinAngle = 0;
+
+    const rarityConfig = {
+      common: { holoOp: 0,    foilOp: 0,   glareOp: 0.06, intensity: 0.3 },
+      rare:   { holoOp: 0.15, foilOp: 0.1, glareOp: 0.15, intensity: 0.5 },
+      holo:   { holoOp: 0.55, foilOp: 0.4, glareOp: 0.35, intensity: 0.8 },
+      ex:     { holoOp: 0.75, foilOp: 0.6, glareOp: 0.45, intensity: 1.0 }
+    };
+
+    function setRarity(r) {
+      rarity = r;
+      document.querySelectorAll('.r-btn').forEach(b => b.classList.remove('sel'));
+      document.querySelector('.r-btn.r-' + r).classList.add('sel');
+    }
+
+    function applyTilt(rx, ry, pctX, pctY) {
+      const cfg = rarityConfig[rarity];
+      card.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+
+      const hue = (pctX * 360 + pctY * 180) % 360;
+      const sat = 80 + pctY * 20;
+
+      holo.style.opacity = cfg.holoOp;
+      holo.style.background = `linear-gradient(
+        ${115 + ry * 2}deg,
+        transparent 0%,
+        hsla(${hue},${sat}%,65%,0.15) 20%,
+        hsla(${(hue+60)%360},${sat}%,65%,0.18) 40%,
+        hsla(${(hue+120)%360},${sat}%,65%,0.15) 60%,
+        hsla(${(hue+200)%360},${sat}%,65%,0.12) 80%,
+        transparent 100%
+      )`;
+
+      foil.style.opacity = cfg.foilOp;
+      foil.style.background = `radial-gradient(
+        ellipse at ${pctX*100}% ${pctY*100}%,
+        hsla(${hue},100%,80%,0.5) 0%,
+        hsla(${(hue+80)%360},100%,75%,0.3) 30%,
+        hsla(${(hue+160)%360},100%,70%,0.15) 60%,
+        transparent 80%
+      )`;
+
+      glare.style.opacity = cfg.glareOp * (0.5 + Math.abs(rx)/30*0.5 + Math.abs(ry)/30*0.5);
+      glare.style.background = `radial-gradient(circle at ${pctX*100}% ${pctY*100}%, rgba(255,255,255,0.35) 0%, transparent 60%)`;
+
+      shadow.style.boxShadow = `${-ry*0.5}px ${rx*0.5}px ${24+Math.abs(rx)+Math.abs(ry)}px rgba(0,0,0,0.5)`;
+    }
+
+    function onMouseMove(e) {
+      if (mode !== 'mouse') return;
+      const rect = card.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top  + rect.height / 2;
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      const maxW = rect.width  / 2;
+      const maxH = rect.height / 2;
+      applyTilt(-(dy/maxH)*18, (dx/maxW)*18, (dx+maxW)/(maxW*2), (dy+maxH)/(maxH*2));
+    }
+
+    function onMouseLeave() {
+      if (mode !== 'mouse') return;
+      card.style.transition = 'transform 0.5s ease-out';
+      card.style.transform  = 'rotateX(0deg) rotateY(0deg)';
+      holo.style.opacity  = 0;
+      foil.style.opacity  = 0;
+      glare.style.opacity = 0;
+      shadow.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+      setTimeout(() => { card.style.transition = 'transform 0.08s ease-out'; }, 500);
+    }
+
+    card.addEventListener('mousemove', onMouseMove);
+    card.addEventListener('mouseleave', onMouseLeave);
+
+    card.addEventListener('touchmove', (e) => {
+      if (mode !== 'mouse') return;
+      e.preventDefault();
+      const t = e.touches[0];
+      const rect = card.getBoundingClientRect();
+      const cx = rect.left + rect.width  / 2;
+      const cy = rect.top  + rect.height / 2;
+      const dx = t.clientX - cx;
+      const dy = t.clientY - cy;
+      const maxW = rect.width  / 2;
+      const maxH = rect.height / 2;
+      applyTilt(-(dy/maxH)*18, (dx/maxW)*18, (dx+maxW)/(maxW*2), (dy+maxH)/(maxH*2));
+    }, { passive: false });
+
+    card.addEventListener('touchend', onMouseLeave);
+
+    function startSpin() {
+      function tick() {
+        spinAngle += 0.6;
+        const ry = Math.sin((spinAngle * Math.PI) / 180) * 22;
+        const rx = Math.sin((spinAngle * 0.7 * Math.PI) / 180) * 10;
+        applyTilt(rx, ry, (ry+22)/44, (rx+10)/20);
+        spinAnim = requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    function startGyro() {
+      if (!window.DeviceOrientationEvent) {
+        alert('이 브라우저에서는 자이로스코프를 지원하지 않습니다.');
+        setMode('mouse'); return;
+      }
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission().then(r => {
+          if (r !== 'granted') { setMode('mouse'); return; }
+          window.addEventListener('deviceorientation', handleGyro);
+        });
+      } else {
+        window.addEventListener('deviceorientation', handleGyro);
+      }
+    }
+
+    function handleGyro(e) {
+      if (mode !== 'gyro') return;
+      const beta  = Math.max(-30, Math.min(30, e.beta  - 45));
+      const gamma = Math.max(-30, Math.min(30, e.gamma));
+      applyTilt(-beta*0.5, gamma*0.5, (gamma+30)/60, (beta+30)/60);
+    }
+
+    function resetCard() {
+      card.style.transition = 'transform 0.4s ease';
+      card.style.transform  = 'rotateX(0) rotateY(0)';
+      holo.style.opacity  = 0;
+      foil.style.opacity  = 0;
+      glare.style.opacity = 0;
+      setTimeout(() => { card.style.transition = 'transform 0.08s ease-out'; }, 400);
+    }
+
+    function setMode(m) {
+      mode = m;
+      ['mouse','gyro','spin'].forEach(x => {
+        document.getElementById('btn-'+x).classList.toggle('active', x === m);
+      });
+      if (spinAnim) { cancelAnimationFrame(spinAnim); spinAnim = null; }
+      if (m === 'spin')  startSpin();
+      if (m === 'gyro')  startGyro();
+      if (m === 'mouse') resetCard();
+    }
+
+    function loadImage(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        document.getElementById('card-img').src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  </script>
+</body>
+</html>
